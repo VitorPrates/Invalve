@@ -48,10 +48,9 @@ String getHTML() {
   )rawliteral";
 }
 
-//Buscar/Buscar id do dispositivo
-String buscar_id(String ssid, String senha)
-{
-  WiFi.begin(ssid,senha);
+String buscar_id(String ssid, String senha) {
+  WiFi.begin(ssid, senha);
+
   int tentativas = 0;
   while (WiFi.status() != WL_CONNECTED && tentativas < 20) {
     digitalWrite(LED_BUILTIN, HIGH);
@@ -61,29 +60,41 @@ String buscar_id(String ssid, String senha)
     Serial.print(".");
     tentativas++;
   }
-  Serial.println("conectado..");
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nBuscando um ID");
+    Serial.println("\nConectado ao Wi-Fi.");
+    Serial.println("Buscando um ID...");
 
     HTTPClient http;
     String url = "http://fatec-aap-vi-backend.onrender.com/api/devices"; 
     http.begin(url);
 
-    // Defina os cabeçalhos da requisição
+    // Prepara o JSON de envio
+    StaticJsonDocument<200> docSend;
+    docSend["mac"] = WiFi.macAddress();  // Você pode trocar isso se quiser usar outro identificador
+    docSend["tipo"] = "ESP32";
+
+    String payloadEnvio;
+    serializeJson(docSend, payloadEnvio);
+
+    // Cabeçalho da requisição
     http.addHeader("Content-Type", "application/json");
 
-    // Crie o corpo da requisição, se necessário (caso contrário, envie "{}")
-    String payloadEnvio = "{}";  // ou algo como: "{\"chave\":\"valor\"}"
-
-    // Envie a requisição POST
+    // Envia POST
     int httpCode = http.POST(payloadEnvio);
 
+    // Verifica resposta
     if (httpCode > 0) {
       String payload = http.getString();
+
+      Serial.print("HTTP Code: ");
+      Serial.println(httpCode);
+
+      Serial.println("Resposta da API:");
       Serial.println(payload);
-      // Parsear JSON
-      const size_t capacidadeBuffer = 1024;
-      StaticJsonDocument<capacidadeBuffer> doc;
+
+      // Parse do JSON
+      StaticJsonDocument<1024> doc;
       DeserializationError erro = deserializeJson(doc, payload);
 
       if (erro) {
@@ -92,8 +103,14 @@ String buscar_id(String ssid, String senha)
         return "erro";
       }
 
-      String id_encontrado = doc["data"]["token"];
-      return id_encontrado;
+      // Extrai o token
+      if (doc.containsKey("data") && doc["data"].containsKey("token")) {
+        String token = doc["data"]["token"].as<String>();
+        return token;
+      } else {
+        Serial.println("Resposta JSON não contém 'data.token'");
+        return "erro";
+      }
     } else {
       Serial.print("Erro na requisição HTTP: ");
       Serial.println(httpCode);
@@ -102,9 +119,9 @@ String buscar_id(String ssid, String senha)
 
     http.end();
   } else {
+    Serial.println("Falha ao conectar no Wi-Fi.");
     return "erro";
   }
-
 }
 
 // Função principal de inicialização do Wi-Fi
