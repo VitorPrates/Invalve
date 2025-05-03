@@ -22,13 +22,16 @@ WebServer server(80);
 //Configurações iniciais para comunicação WEB
 
 
-String ssidInput, passInput;
+String ssidInput, passInput;          // Ssid e senha do wifi do usuário
+String email, login;                  // Email e login do usuário
+String token, token_type;              // Tokens do usuário
 const byte DNS_PORT = 53;
 
 const char* ssid = "";                 // Nome do WiFi do usuário
 const char* password = "";             // Senha do WiFi do usuário
 const char* apSSID = "Invalve_Config"; // Nome do Ponto de acesso ESP
 const char* apPASS = "12345678";       // Senha do ponto de acesso
+String device_id = "";                 // Id do dispositivo
 
 
 String device_name = "abc";
@@ -56,39 +59,48 @@ String getHTML() {
     </html>
   )rawliteral";
 }
+String getUserHTML() {
+  return R"rawliteral(
+    <!DOCTYPE html>
+    <html>
+    <body>
+      <h2>Configuração de Login Invalve</h2>
+      <p>Internet: OK</p>
+      <form action="/save" method="POST">
+        Seu Email:<input type="text" name="email"><br><br>
+        Sua Senha de login:<input type="text" name="login"><br><br>
+        <input type="submit" value="Salvar">
+      </form>
+    </body>
+    </html>
+  )rawliteral";
+}
 
-
-String buscar_id(String ssid, String senha) {
-  WiFi.begin(ssid, senha);
-
-  int tentativas = 0;
-  while (WiFi.status() != WL_CONNECTED && tentativas < 20) {
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(250);
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(250);
-    Serial.print(".");
-    tentativas++;
-  }
-
+String Id_encontrado(String token_tipo, String token_user)
+{
+  token_tipo.trim();
+  token.trim();
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nConectado ao Wi-Fi.");
+    Serial.println("\n verificando token....");
     Serial.println("Buscando um ID...");
 
     HTTPClient http;
-    String url = "http://fatec-aap-vi-backend.onrender.com/api/devices"; 
+    String url = "https://fatec-aap-vi-backend.onrender.com/api/devices/"; 
     http.begin(url);
 
     // Prepara o JSON de envio
     StaticJsonDocument<200> docSend;
-    docSend["mac"] = WiFi.macAddress();  // Você pode trocar isso se quiser usar outro identificador
-    docSend["tipo"] = "ESP32";
+    Serial.println("tokentipo e token user:");
+    Serial.println(token_tipo + " " + token_user);
+
+    // docSend["Authorization"] = token_tipo + " " + token_user;  // Você pode trocar isso se quiser usar outro identificador
 
     String payloadEnvio;
     serializeJson(docSend, payloadEnvio);
 
     // Cabeçalho da requisição
     http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", token_tipo + " " + token_user);
 
     // Envia POST
     int httpCode = http.POST(payloadEnvio);
@@ -115,8 +127,170 @@ String buscar_id(String ssid, String senha) {
 
       // Extrai o token
       if (doc.containsKey("data") && doc["data"].containsKey("token")) {
+        String ID = doc["data"]["token"].as<String>();
+        preferences.begin("wifiCreds", false);
+        preferences.putString("device_id", ID);
+        return ID;
+        // return token;
+      } else {
+        Serial.println("Resposta JSON não contém 'data.token'");
+        return "erro";
+      }
+    } else {
+      Serial.print("Erro na requisição HTTP: ");
+      Serial.println(httpCode);
+      return "erro";
+    }
+
+    http.end();
+  } else {
+    Serial.println("Falha ao conectar no Wi-Fi.");
+    return "erro";
+  }
+}
+
+bool tentativa_login = true;
+String buscar_id(String ssid, String senha) {
+  if(device_id == "" || device_id == "erro" || device_id == "LN5PFBLh")
+  {
+    // Modo Ponto de acesso (para receber informações de login)
+    WiFi.disconnect(true);
+    delay(1000);
+    WiFi.mode(WIFI_AP);// Ativa o modo de Ponto de acesso (AP - Access Point) 
+    WiFi.softAP(apSSID, apPASS); // Inicia com as credênciais definidas no início do código, Nome da rede = "Invalve_Config", Senha = "12345678"
+
+    //IP do esp para ser acessado via internet para envio de credênciais
+    IPAddress myIP = WiFi.softAPIP();
+    Serial.print("AP IP: ");
+    Serial.println(myIP);
+
+    dnsServer.start(DNS_PORT, "*", myIP);//Função para redirecionar usuário, quando conectado
+    
+    // Página inicial (formulário)
+    server.on("/", HTTP_GET, []() {
+      server.send(200, "text/html", getUserHTML());
+    });
+
+    // Quando chamada, reinicia o sistema
+    server.on("/prosseguir", HTTP_GET,[](){
+      tentativa_login = false;
+    });
+
+    // Salvando SSID e senha
+    server.on("/save", HTTP_POST, []() {
+      String emailInput = server.arg("email");
+      String loginInput = server.arg("login");
+
+      // server.send(200, "text/html", "<h1>Tentando se conectar, aguarde...</form>");
+      // server.send(200, "text/html", "<h1>Login e Email recebidos, salvando... <form action='/prosseguir' method='GET'> <input type='submit' value='Continuar'> <input type='button' onclick='history.back()' value='Continuar'> </form>");
+      
+      //recebendo credenciais
+      emailInput.trim();
+      loginInput.trim();
+      //organizando de forma que o sistema entenda (removendo espaços no início ou final das credênciais recebidas)
+
+      //se nenhuma das credências estiver vazia
+      if (emailInput != "" && loginInput != "") {
+        //Salva credênciais novas na memória
+        preferences.begin("wifiCreds", false);
+        preferences.putString("email", emailInput);
+        preferences.putString("login", loginInput);
+        // Serial.println(device_id);
+        email = emailInput;
+        login = loginInput;
+        server.send(200, "text/html", "<h1>Login e Email recebidos! <form action='/prosseguir' method='GET'> <input type='submit' value='Continuar'></form>");
+      }
+      else {
+        server.send(200, "text/html", "<h1>Email e login não podem estar vazios!</h1>");
+      }
+    });
+
+    // Redireciona qualquer rota para "/"
+    server.onNotFound([]() {
+      server.sendHeader("Location", "/", true);
+      server.send(302, "text/plain", "");
+    }); 
+    // $ 221-271 -> funções responsáveis por devolver ao usuário páginas HTML para lhe auxiliar
+
+    server.begin();//iniciar o servidor do dispositivo
+
+    // Loop de espera no modo AP, garante que o server irá receber e enviar informações
+    while (tentativa_login) {
+      dnsServer.processNextRequest();
+      server.handleClient();
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(200);
+      digitalWrite(LED_BUILTIN, LOW);
+      delay(200);
+    }
+  }
+
+  server.close();
+  inicializarWiFi();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConectado ao Wi-Fi.");
+    Serial.println("Buscando um ID...");
+    Serial.print("\nEmail:");
+    Serial.println(email);
+    Serial.print("Senha:");
+    Serial.println(login);
+    
+    // WiFiClient client;
+    HTTPClient http;
+    String url = "https://fatec-aap-vi-backend.onrender.com/api/auth/login"; 
+
+    http.begin(url);
+
+    // Prepara o JSON de envio
+    StaticJsonDocument<200> docSend;
+    docSend["email"] = email;  // Você pode trocar isso se quiser usar outro identificador
+    docSend["password"] = login;
+
+    String payloadEnvio;
+    serializeJson(docSend, payloadEnvio);
+
+    // Cabeçalho da requisição
+    http.addHeader("Content-Type", "application/json");
+
+    // Envia POST
+    int httpCode = http.POST(payloadEnvio);
+    // int httpCode = http.GET();
+
+    // Verifica resposta
+    if (httpCode > 0) {
+      String payload = http.getString();
+
+      Serial.print("HTTP Code: ");
+      Serial.println(httpCode);
+
+      Serial.println("Resposta da API:");
+      Serial.println(payload);
+
+      // Parse do JSON
+      StaticJsonDocument<1024> doc;
+      // Serial.println(doc.c_str());
+      DeserializationError erro = deserializeJson(doc, payload);
+
+      if (erro) {
+        Serial.print("Erro ao parsear JSON: ");
+        Serial.println(erro.c_str());
+        return "erro";
+      }
+
+      // Extrai o token
+      if (doc.containsKey("data") && doc["data"].containsKey("token") && doc["data"].containsKey("token_type")) {
         String token = doc["data"]["token"].as<String>();
-        return token;
+        String token_type = doc["data"]["token_type"].as<String>();
+        Serial.print("TOKEN:");
+        Serial.println(token);
+        Serial.print("TOKEN_TYPE:");
+        Serial.println(token_type);
+        preferences.begin("wifiCreds", false);
+        preferences.putString("token", token);
+        preferences.putString("token_type", token_type);
+        return Id_encontrado(token_type, token);
+        // return token;
       } else {
         Serial.println("Resposta JSON não contém 'data.token'");
         return "erro";
@@ -146,6 +320,7 @@ void inicializarWiFi() {
   WiFi.disconnect(true);  // Remove redes salvas previamente
   delay(1000);
   WiFi.mode(WIFI_STA);  // Garante que está no modo Station para permitir novas conexões
+
   //Inicia uma operação para guardar na memória do dispositivo as credênciais de WIFI do usuário 
   preferences.begin("wifiCreds", false);
   String savedSSID = preferences.getString("ssid", "");//busca o nome do wifi registrado na memória para tentar conexão
@@ -160,7 +335,7 @@ void inicializarWiFi() {
   savedPASS.trim();
 
   // Verifica se há uma rede WIFI e senha registrada na memória
-  if (savedSSID != "" && savedPASS != "") {
+  if (savedSSID != "" || savedPASS != "") {
     //caso sim, inicia um processo de tentar se conectar com a internet 
     Serial.println("Tentando conectar com credenciais salvas...");
     digitalWrite(LED_BUILTIN, HIGH);
@@ -176,7 +351,6 @@ void inicializarWiFi() {
 
     WiFi.begin(savedSSID.c_str(), savedPASS.c_str());
     //Função que tenta se conectar no WIFI usando as credênciais registradas na memória
-
     int tentativas = 0;
     while (WiFi.status() != WL_CONNECTED && tentativas < 20) {
       digitalWrite(LED_BUILTIN, HIGH);
@@ -215,9 +389,7 @@ void inicializarWiFi() {
   Serial.print("AP IP: ");
   Serial.println(myIP);
 
-  
   dnsServer.start(DNS_PORT, "*", myIP);//Função para redirecionar usuário, quando conectado
-
   
   // Página inicial (formulário)
   server.on("/", HTTP_GET, []() {
@@ -233,44 +405,25 @@ void inicializarWiFi() {
   server.on("/save", HTTP_POST, []() {
     ssidInput = server.arg("ssid");
     passInput = server.arg("pass");
-    //recebendo credenciais
 
+    // server.send(200, "text/html", "<h1>Tentando se conectar, aguarde...</form>");
+
+    server.send(200, "text/html", "<h1>Tentando se conectar, aguarde... <form action='/reiniciar' method='GET'> <input type='submit' value='Continuar'></form>");
+    //recebendo credenciais
     ssidInput.trim();
     passInput.trim();
     //organizando de forma que o sistema entenda (removendo espaços no início ou final das credênciais recebidas)
 
     //se nenhuma das credências estiver vazia
-    if (ssidInput != "" && passInput != "") {
+    if (ssidInput != "" || passInput != "" || passInput != "" || passInput != "") {
       //Salva credênciais novas na memória
       preferences.putString("ssid", ssidInput);
       preferences.putString("pass", passInput);
-
-      String device_id = preferences.getString("device_id", "");
-      Serial.println(device_id);
-
-      //<REMOVER>
-      if(device_id == "" || device_id == "erro")
-      {
-        device_id = buscar_id(ssidInput, passInput);
-        if(device_id != "erro")
-        {
-          server.send(200, "text/html", "<h1>Credenciais salvas - [ERRO ID] - Reiniciando...</h1> <form action='/reiniciar' method='GET'> <input type='submit' value='Continuar'></form>");
-        }
-        else
-        {
-          preferences.putString("device_id", device_id);
-          server.send(200, "text/html", "<h1>Credenciais salvas - ID do dispositivo:"+ device_id +" - Reiniciando...</h1> <form action='/reiniciar' method='GET'> <input type='submit' value='Continuar'></form>");
-        }
-      }
-      else
-      {
-        server.send(200, "text/html", "<h1>Credenciais salvas - ID do dispositivo:"+ device_id +" - Reiniciando...</h1> <form action='/reiniciar' method='GET'> <input type='submit' value='Continuar'></form>");
-      }
-      delay(2000);
-    } else {
+      // Serial.println(device_id);
+    }
+     else {
       server.send(200, "text/html", "<h1>SSID e Senha não podem estar vazios!</h1>");
     }
-    //</REMOVER>
   });
 
   // Redireciona qualquer rota para "/"
@@ -293,7 +446,6 @@ void inicializarWiFi() {
   }
 }
 
-
 void IRAM_ATTR contarPulso() {
   contagemPulsos++;
 }
@@ -301,11 +453,23 @@ void IRAM_ATTR contarPulso() {
 //função responsável por verificar as tarefas que o sistema deve executar
 String tarefas() {
     //verifica se está conectado
+    Serial.println("____________________________________________________________________________/");
     if (WiFi.status() == WL_CONNECTED) {
         //Se conectado, inicia o processo de verificação do banco de dados, em busca de uma tarefa 
         HTTPClient http;
-        String url = "https://fatec-aap-vi-backend.onrender.com/api/queues?device=" + device_name; 
+        // String url = "https://fatec-aap-vi-backend.onrender.com/api/queues?device=" + device_name; //antigo método
+        String url = "https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"/commands"; 
         http.begin(url);
+        Serial.print("Link: ");
+        Serial.println("https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"/commands");
+        Serial.print("Authorization: ");
+        Serial.println(token_type + " " + token);
+        Serial.print("TOKEN_USER:");
+        Serial.println(token);
+        Serial.print("TOKEN_TYPE:");
+        Serial.println(token_type);
+        http.addHeader("Content-Type", "application/json");
+        http.addHeader("Authorization", token_type + " " + token);
         
         int httpCode = http.GET();
 
@@ -328,9 +492,24 @@ String tarefas() {
             // Caso tenha entendido a função, coleta apenas o que é útil ao sistema, e devolve o que tem que ser feito
             // Acessar valores do JSON
             String message = doc["message"];
-            String command = doc["data"]["event"]["command"];
-            
-            return command; //retorna o comando a ser realizado pelo sistema
+            JsonArray comandos = doc["data"]["data"];  // Array de comandos
+
+            if (comandos.size() > 0) {
+                String command_id = comandos[0]["id"].as<String>();
+                String command = comandos[0]["command"].as<String>();
+
+                Serial.print("mensagem:");
+                Serial.println(message);
+                Serial.print("id do comando:");
+                Serial.println(command_id);
+                Serial.print("comando:");
+                Serial.println(command);
+
+                return command; //comando a ser executado e seu ID
+            } else {
+                Serial.println("Nenhum comando disponível.");
+                return "null";
+            }
         } else {
             //caso de erro em comunicação com o banco de dados
             Serial.print("Erro na requisição: ");
@@ -342,6 +521,12 @@ String tarefas() {
         Serial.println("WiFi desconectado!");
         ESP.restart();
     }
+}
+
+//Informar o servidor que o comando foi executado
+void executar_tarefa()
+{
+
 }
 
 //Ocorre quando o usuário solicita informações do fluxo de vazão que o sistema está lendo
@@ -397,6 +582,31 @@ void setup() {
   inicializarWiFi();
   //Chama a função para que o sistema se conecte no WIFI
 
+  preferences.begin("wifiCreds", false);
+  Serial.print("flash_device_save:");
+  Serial.println(preferences.getString("device_id", ""));
+  token = preferences.getString("token", "");
+  token_type = preferences.getString("token_type", "");
+  device_id = preferences.getString("device_id", "");
+  email = preferences.getString("email", "");
+  login = preferences.getString("login", "");
+  Serial.print("DEVICE TOKEN:");
+  Serial.println(device_id);
+  Serial.print("TOKEN_USER:");
+  Serial.println(token);
+  Serial.print("TOKEN_TYPE:");
+  Serial.println(token_type);
+  Serial.print("EMAIL:");
+  Serial.println(email);
+  Serial.print("SENHA:");
+  Serial.println(login);
+  if(device_id == "" || device_id == "erro" || device_id == "LN5PFBLh")
+  {
+    device_id = buscar_id(preferences.getString("ssid", ""), preferences.getString("pass", ""));
+  }
+
+  
+  
   attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), contarPulso, RISING);
   //Inicia a configuralão do leitor de fluxo de vazão
 
@@ -434,7 +644,7 @@ void loop() {
   }
   
   Serial.println(task);
-  
+
   if(task == "close")
   {
     valvula = true;
