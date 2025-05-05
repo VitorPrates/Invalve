@@ -450,6 +450,50 @@ void IRAM_ATTR contarPulso() {
   contagemPulsos++;
 }
 
+//Informar o servidor que o comando foi executado
+void executar_tarefa(String id_comando)
+{
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = "https://fatec-aap-vi-backend.onrender.com/api/commands/" + id_comando;
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", token_type + " " + token);
+
+    // Criar JSON com o id_comando
+    StaticJsonDocument<200> doc_envio;
+    doc_envio["id_comando"] = id_comando;
+    String jsonBody;
+    serializeJson(doc_envio, jsonBody);
+
+    int httpCode = http.POST(jsonBody);
+
+    if (httpCode > 0) {  // Sucesso
+      String payload = http.getString();
+      const size_t capacidadeBuffer = 1024;
+      StaticJsonDocument<capacidadeBuffer> doc;
+      DeserializationError erro = deserializeJson(doc, payload);
+
+      if (erro) {
+        Serial.print("Erro ao parsear JSON: ");
+        Serial.println(erro.c_str());
+      } else {
+        String message = doc["message"];
+        Serial.println(message);
+      }
+    } else {
+      Serial.print("Erro na requisição POST: ");
+      Serial.println(httpCode);
+    }
+
+    http.end();
+  } else {
+    Serial.println("WiFi desconectado!");
+    ESP.restart();
+  }
+}
+
+
 //função responsável por verificar as tarefas que o sistema deve executar
 String tarefas() {
     //verifica se está conectado
@@ -505,6 +549,7 @@ String tarefas() {
                 Serial.print("comando:");
                 Serial.println(command);
 
+                executar_tarefa(command_id);
                 return command; //comando a ser executado e seu ID
             } else {
                 Serial.println("Nenhum comando disponível.");
@@ -523,26 +568,21 @@ String tarefas() {
     }
 }
 
-//Informar o servidor que o comando foi executado
-void executar_tarefa()
-{
-
-}
-
 //Ocorre quando o usuário solicita informações do fluxo de vazão que o sistema está lendo
-void enviarinfos(String device, float media_fluxo)
+void enviarinfos(float media_fluxo)
 {
    //verifica se o sistema está conectado
   if (WiFi.status() == WL_CONNECTED) {
         //Se conectado, começa o processo de envio ao banco de dados a informação solicitada 
         HTTPClient http;
-        http.begin("https://fatec-aap-vi-backend.onrender.com/api/queues/water_flow");
+        // http.begin("https://fatec-aap-vi-backend.onrender.com/api/queues/water_flow");
+        http.begin("https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"/metrics");
         http.addHeader("Content-Type", "application/json");
+        http.addHeader("Authorization", token_type + " " + token);
 
         // Criando o JSON exigido pelo banco de dados
         StaticJsonDocument<200> doc;
-        doc["device"] = device;
-        doc["average_water_flow"] = media_fluxo;
+        doc["water_flow"] = media_fluxo;
 
         //Organiza os dados para serem interpretados no banco de dados
         String jsonStr;
@@ -617,6 +657,7 @@ void setup() {
 }
 
 String task = "No event";
+int envio_infos_tempo = 0;
 void loop() {
   task = tarefas();
   //Chama a função de tarefas e armazena a tarefa a ser executada
@@ -638,12 +679,14 @@ void loop() {
   
     contagemPulsos = 0;
     ultimoTempo = tempoAgora;
-  
     attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), contarPulso, RISING);
     //Garante que sistema e o módulo estejam alinhados quanto ao seu tempo de funcionamento, em conjunto com a função "detachInterrupt"
+    envio_infos_tempo++;
   }
   
   Serial.println(task);
+  Serial.print("Tempo envio infos: ");
+  Serial.println(envio_infos_tempo);
 
   if(task == "close")
   {
@@ -669,7 +712,7 @@ void loop() {
     digitalWrite(LED_BUILTIN, HIGH);
     delay(100);
   }
-  else if(task == "check")
+  if(envio_infos_tempo == 5)
   {
     digitalWrite(LED_BUILTIN, LOW);
     delay(100);
@@ -679,7 +722,11 @@ void loop() {
     delay(100);
     digitalWrite(LED_BUILTIN, HIGH);
     delay(100);
-    enviarinfos(device_name, vazaoLPorMinuto);
+    if(vazaoLPorMinuto != 0.00)
+    {
+      enviarinfos(vazaoLPorMinuto);
+    }
+    envio_infos_tempo = 0;
   }
   // $ 439 - 475 -> Realiza ações de acordo com a tarefa retornada, e pisca o LED para demonstrar que a tarefa foi realizada
 
