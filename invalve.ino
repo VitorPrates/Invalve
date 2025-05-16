@@ -30,6 +30,7 @@ const byte DNS_PORT = 53;
 const char* ssid = "";                 // Nome do WiFi do usuário
 const char* password = "";             // Senha do WiFi do usuário
 const char* apSSID = "Invalve_Config"; // Nome do Ponto de acesso ESP
+const char* apSSID_login = "Invalve_Login";  // Nome do Ponto de acesso ESP de login
 const char* apPASS = "12345678";       // Senha do ponto de acesso
 String device_id = "";                 // Id do dispositivo
 
@@ -48,12 +49,48 @@ String getHTML() {
   return R"rawliteral(
     <!DOCTYPE html>
     <html>
+    <head>
+      <title>Configuração Wi-Fi Invalve</title>
+      <style>
+        html
+        {
+            width: 100vw;
+        }
+        body
+        {
+            width: 99%;
+        }
+        h2
+        {
+            font-size: 3em;
+            width: 100%;
+            text-align: center;
+        }
+        form
+        {
+            width: 100%;
+            font-size: 3em;
+            display: grid;
+            grid-template-columns: 30% 65%;
+            gap: 5px;
+        }
+        form > input
+        {
+            font-size: 0.7em;
+            border: 1px solid black;
+            padding: 0px 10px;
+            margin: 20px 0px;
+        }
+      </style>
+    </head>
     <body>
-      <h2>Configuração Wi-Fi Invalve</h2>
+      <h2>Configurando Wi-Fi do dispositivo</h2>
       <form action="/save" method="POST">
-        Sua internet: <input type="text" name="ssid"><br><br>
-        Senha: <input type="text" name="pass"><br><br>
-        <input type="submit" value="Salvar">
+        <label for="ssid">Sua internet:</label>
+        <input type="text" name="ssid">
+        <label for="pass">Senha:</label>
+        <input type="text" name="pass">
+        <br><input type="submit" value="Salvar">
       </form>
     </body>
     </html>
@@ -62,14 +99,52 @@ String getHTML() {
 String getUserHTML() {
   return R"rawliteral(
     <!DOCTYPE html>
+    <!DOCTYPE html>
     <html>
+        <style>
+            html
+            {
+                width: 100vw;
+            }
+            body
+            {
+                width: 99%;
+            }
+            h2
+            {
+                font-size: 3em;
+                width: 100%;
+                text-align: center;
+            }
+            form
+            {
+                width: 100%;
+                font-size: 2.5em;
+                display: grid;
+                grid-template-columns: 35% 60%;
+                gap: 5px;
+            }
+            form > input
+            {
+                font-size: 0.7em;
+                border: 1px solid black;
+                padding: 0px 10px;
+                margin: 20px 0px;
+            }
+            p
+            {
+                color: green;
+            }
+          </style>
     <body>
       <h2>Configuração de Login Invalve</h2>
       <p>Internet: OK</p>
       <form action="/save" method="POST">
-        Seu Email:<input type="text" name="email"><br><br>
-        Sua Senha de login:<input type="text" name="login"><br><br>
-        <input type="submit" value="Salvar">
+        <label for="email">Seu Email:</label>
+        <input type="text" name="email">
+        <label for="login">Sua Senha de login:</label>
+        <input type="text" name="login">
+        <br><input type="submit" value="Salvar">
       </form>
     </body>
     </html>
@@ -151,13 +226,13 @@ String Id_encontrado(String token_tipo, String token_user)
 
 bool tentativa_login = true;
 String buscar_id(String ssid, String senha) {
-  if(device_id == "" || device_id == "erro" || device_id == "LN5PFBLh")
+  if(device_id == "" || device_id == "erro" || device_id == "cgTw56Z5")
   {
     // Modo Ponto de acesso (para receber informações de login)
     WiFi.disconnect(true);
     delay(1000);
     WiFi.mode(WIFI_AP);// Ativa o modo de Ponto de acesso (AP - Access Point) 
-    WiFi.softAP(apSSID, apPASS); // Inicia com as credênciais definidas no início do código, Nome da rede = "Invalve_Config", Senha = "12345678"
+    WiFi.softAP(apSSID_login, apPASS); // Inicia com as credênciais definidas no início do código, Nome da rede = "Invalve_Login", Senha = "12345678"
 
     //IP do esp para ser acessado via internet para envio de credênciais
     IPAddress myIP = WiFi.softAPIP();
@@ -198,7 +273,7 @@ String buscar_id(String ssid, String senha) {
         // Serial.println(device_id);
         email = emailInput;
         login = loginInput;
-        server.send(200, "text/html", "<h1>Login e Email recebidos! <form action='/prosseguir' method='GET'> <input type='submit' value='Continuar'></form>");
+        server.send(200, "text/html", "<h1>Login e Email recebidos! <form action='/prosseguir' method='GET'> <input type='submit' value='Continuar' style='width: 100%; height: 50px; background-color: green; color: white; font-size: 20px'></form>");
       }
       else {
         server.send(200, "text/html", "<h1>Email e login não podem estar vazios!</h1>");
@@ -219,9 +294,9 @@ String buscar_id(String ssid, String senha) {
       dnsServer.processNextRequest();
       server.handleClient();
       digitalWrite(LED_BUILTIN, HIGH);
-      delay(200);
+      delay(70);
       digitalWrite(LED_BUILTIN, LOW);
-      delay(200);
+      delay(70);
     }
   }
 
@@ -408,7 +483,8 @@ void inicializarWiFi() {
 
     // server.send(200, "text/html", "<h1>Tentando se conectar, aguarde...</form>");
 
-    server.send(200, "text/html", "<h1>Tentando se conectar, aguarde... <form action='/reiniciar' method='GET'> <input type='submit' value='Continuar'></form>");
+    // server.send(200, "text/html", "<h1>Tentando se conectar, aguarde... <form action='/reiniciar' method='GET'> <input type='submit' value='Continuar'></form>");
+    server.send(200, "text/html", "<h1>Dados recebidos, renicie o dispositivo <form action='/reiniciar' method='GET'> <input type='submit' value='Reiniciar' style='width: 100%; height: 50px; background-color: green; color: white; font-size: 20px'></form>");
     //recebendo credenciais
     ssidInput.trim();
     passInput.trim();
@@ -502,7 +578,7 @@ String tarefas() {
         //Se conectado, inicia o processo de verificação do banco de dados, em busca de uma tarefa 
         HTTPClient http;
         // String url = "https://fatec-aap-vi-backend.onrender.com/api/queues?device=" + device_name; //antigo método
-        String url = "https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"/commands"; 
+        String url = "https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"?filters[listing_type]=basic_executed"; 
         http.begin(url);
         Serial.print("Link: ");
         Serial.println("https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"/commands");
@@ -640,7 +716,7 @@ void setup() {
   Serial.println(email);
   Serial.print("SENHA:");
   Serial.println(login);
-  if(device_id == "" || device_id == "erro" || device_id == "LN5PFBLh")
+  if(device_id == "" || device_id == "erro" || device_id == "cgTw56Z5")
   {
     device_id = buscar_id(preferences.getString("ssid", ""), preferences.getString("pass", ""));
   }
@@ -687,6 +763,8 @@ void loop() {
   Serial.println(task);
   Serial.print("Tempo envio infos: ");
   Serial.println(envio_infos_tempo);
+  Serial.print("Dispositivo: ");
+  Serial.println(device_id);
 
   if(task == "close")
   {
@@ -722,10 +800,11 @@ void loop() {
     delay(100);
     digitalWrite(LED_BUILTIN, HIGH);
     delay(100);
-    if(vazaoLPorMinuto != 0.00)
-    {
-      enviarinfos(vazaoLPorMinuto);
-    }
+    enviarinfos(vazaoLPorMinuto);
+    // if(vazaoLPorMinuto != 0.00)
+    // {
+      
+    // }
     envio_infos_tempo = 0;
   }
   // $ 439 - 475 -> Realiza ações de acordo com a tarefa retornada, e pisca o LED para demonstrar que a tarefa foi realizada
