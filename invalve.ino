@@ -72,16 +72,6 @@ String getHTML() {
             font-size: 3em;
             display: grid;
             grid-template-columns: 30% 65%;
-Filter your search...
-Type:
-
-All
-
-
-
-
-
-
             gap: 5px;
         }
         form > input
@@ -588,7 +578,7 @@ String tarefas() {
         //Se conectado, inicia o processo de verificação do banco de dados, em busca de uma tarefa 
         HTTPClient http;
         // String url = "https://fatec-aap-vi-backend.onrender.com/api/queues?device=" + device_name; //antigo método
-        String url = "https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"?filters[listing_type]=basic_executed"; 
+        String url = "https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"/commands?filters[listing_type]=basic_unexecuted"; 
         http.begin(url);
         Serial.print("Link: ");
         Serial.println("https://fatec-aap-vi-backend.onrender.com/api/devices/"+ device_id +"/commands");
